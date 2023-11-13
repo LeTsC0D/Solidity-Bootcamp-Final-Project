@@ -1,78 +1,117 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.0;
 
-
-contract Example {
-
-
-    // This is the owner of the contract
-    address owner;
-
-
-    // This is our counter struct. It will hold necessary information about the counter which are
-    // number and description
-    struct Counter {
-        uint number;
+contract VotingContract {
+    address public owner;
+    
+    enum VoteOption { None, Approve, Reject, Pass }
+    
+    struct Proposal {
         string description;
+        string title;
+        uint256 total_vote_to_end;
+        uint256 approve;
+        uint256 reject;
+        uint256 pass;
+        bool is_active;
+        bool current_state;
     }
+    
+    // Proposal[] public proposal_history;
+    mapping(uint256 => Proposal) proposal_history; 
+    uint256[] public proposalIndices;
 
-
-    // Here we create an instance of our Counter.
-    // It is empty for now, but we will initialize it in the constructor.
-    Counter counter;
-
-
-    // We will use this modidifer with our execute functions.
-    // This modifiers make sure that the caller of the function is the owner of the contract.
+    event ProposalCreated(uint256 proposalId, string description, uint256 total_vote_to_end);
+    event Voted(uint256 proposalId, address voter, VoteOption vote);
+    event is_active(uint256 proposalId, bool approved);
+    event current_state(uint256 proposalId, bool approved);
+    
     modifier onlyOwner() {
-        require(msg.sender == owner, "Only the owner can increment or decrement the counter");
+        require(msg.sender == owner, "Only the owner can call this function");
+        _;
+    }
+    
+    modifier validProposal(uint256 proposalId) {
+        require(proposalId < proposalIndices.length, "Invalid proposal ID");
+        require(proposal_history[proposalId].is_active, "Proposal is not active");
+        _;
+    }
+    
+    modifier notOwner() {
+        require(msg.sender != owner, "Owner cannot vote");
         _;
     }
 
-
-    // This is our constructor function. It only runs once when we deploy the contract.
-    // Since it takes two parameters, initial_value and description, they should be provided
-    // when we deploy our contract.
-    constructor(uint initial_value, string memory description) {
+    constructor() {
         owner = msg.sender;
-        counter = Counter(initial_value, description);
     }
 
-
-    // Below, we have two execute functions, increment_counter and decrement_counter
-    // Since they modify data on chain, they require gas fee.
-    // They are external functions, meaning they can only be called outside of the contract.
-    // They also have the onlyOwner modifier which we created above. This make sure that
-    // only the owner of this contract can call these functions.
-
-
-    // This function gets the number field from the counter struct and increases it by one.
-    function increment_counter() external onlyOwner {
-        counter.number += 1;
+    function createProposal(string memory _description, uint256 _total_vote_to_end) external onlyOwner {
+        uint256 proposalId = proposalIndices.length;
+        proposalIndices.push(proposalId);
+        // uint256 proposalId = proposal_history.length;
+        proposal_history[proposalId] = Proposal(
+            _description,
+            _total_vote_to_end,
+            0,
+            0,
+            0,
+            proposalEnded: true,
+            state: ProposalState.Ongoing
+        );
+        // proposal_history.push(Proposal(_description,_total_vote_to_end,0,0,0,true,false));      
+        emit ProposalCreated(proposalId, _description, _total_vote_to_end);
     }
 
+    function vote(uint256 _proposalId, VoteOption _vote) external validProposal(_proposalId) notOwner {
+        require(_vote == VoteOption.Approve || _vote == VoteOption.Reject || _vote == VoteOption.Pass, "Invalid vote option");
+        
+        Proposal storage proposal = proposal_history[_proposalId];
+        require(proposal.approve + proposal.reject + proposal.pass + 1 <= proposal.total_vote_to_end, "Vote limit exceeded");
+        // proposal.voters[msg.sender] = _vote;
+        
+        if (_vote == VoteOption.Approve) {
+            proposal.approve++;
+        } else if (_vote == VoteOption.Reject) {
+            proposal.reject++;
+        } else {
+            proposal.pass++;
+        }
 
-    // This function is similar the one above, but instead of increasing we deacrease the number by one.
-    function decrement_counter() external onlyOwner {
-        counter.number -= 1;
+        emit Voted(_proposalId, msg.sender, _vote);
+        
+        if (proposal.approve >= proposal.total_vote_to_end) {
+            proposal.is_active = true;
+            emit is_active(_proposalId, true);
+        } else if (proposal.reject >= proposal.total_vote_to_end) {
+            proposal.is_active = true;
+            emit is_active(_proposalId, false);
+        }
+        if(proposal.approve+proposal.pass>proposal.reject){
+            proposal.current_state=true;
+            emit current_state(_proposalId, true);
+        }else{
+           proposal.current_state=false; 
+           emit current_state(_proposalId, false);
+        }
+    }
+    
+    function getProposalCount() external view returns (uint256) {
+        return proposal_history.length;
     }
 
-
-    // The function below is a query function.
-    // It does not change any data on the chain. It just rerieves data.
-    // We use the keyword view to indicate it retrieves data but does not change any.
-    // Since we are not modifying any data, we do not pay any gas fee.
-
-
-    // This function returns the number field of our counter struct.
-    // Returning the current state of our counter.
-    function get_counter_value() external view returns(uint) {
-        return counter.number;
+    function getProposal(uint256 _proposalId) external view returns (string memory, uint256, uint256, uint256, uint256, bool,bool) {
+        require(_proposalId < proposal_history.length, "Invalid proposal ID");
+        
+        Proposal storage proposal = proposal_history[_proposalId];
+        return (
+            proposal.description,
+            proposal.total_vote_to_end,
+            proposal.approve,
+            proposal.reject,
+            proposal.pass,
+            proposal.is_active,
+            proposal.current_state
+        );
     }
-
-    // This function returns the description field of our counter struct.
-    // Returning the description of our counter.
-    function get_description() external view returns(string memory) {
-        return counter.description;
-    }    
 }
