@@ -7,7 +7,8 @@ The **Proposal Contract** ,This is a Proposal Contract smart contract where user
 ![image](2.png)
 
 <br/>
-on BSC TESTNET
+on BSC TESTNET<br/>
+
 ![image](3.png)
 ![image](4.png)
 
